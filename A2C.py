@@ -131,8 +131,63 @@ class A2CBase(nn.Module):
 
 
 class A2CSimple(A2CBase):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, is_continuous_actions=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.is_continuous_actions = is_continuous_actions
+
+        if self.is_continuous_actions:
+            self.actor = nn.Sequential(
+                nn.Linear(self.n_features, 64),
+                nn.Tanh(),
+                nn.Linear(64, 64),
+                nn.Tanh(),
+                nn.Linear(64, self.n_actions),
+                nn.Tanh(),
+            ).to(self.device)
+            self.log_std = nn.Parameter(torch.zeros(self.n_actions, device=self.device))
+            self.critic = nn.Sequential(
+                nn.Linear(self.n_features, 64),
+                nn.Tanh(),
+                nn.Linear(64, 64),
+                nn.Tanh(),
+                nn.Linear(64, 1),
+            ).to(self.device)
+            self.optim = optim.Adam(
+                [
+                    {"params": self.actor.parameters()},
+                    {"params": self.critic.parameters()},
+                    {"params": [self.log_std]},
+                ],
+                lr=self.actor_lr,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+            )
+
+    def select_action(self, x):
+        value, logits = self.forward(x)
+
+        if self.is_continuous_actions:
+            mean = logits
+            std = self.log_std.exp()
+            dist = torch.distributions.Normal(mean, std)
+
+            raw_action = dist.rsample()
+            action = torch.tanh(raw_action)
+            gaussian_logp = dist.log_prob(raw_action).sum(-1)
+            squash_correction = torch.log(1 - action.pow(2) + 1e-6).sum(-1)
+            log_prob = gaussian_logp - squash_correction
+            entropy = dist.entropy().sum(-1)
+
+            return action, log_prob, value, entropy, raw_action
+
+        else:
+            dist = torch.distributions.Categorical(logits=logits)
+
+            action = dist.sample()
+            log_prob = dist.log_prob(action)
+            entropy = dist.entropy()
+
+            return action, log_prob, value, entropy, logits
 
     def update_agent(self, rollouts, hp):
         if self.atari_mode:
@@ -140,10 +195,12 @@ class A2CSimple(A2CBase):
             obs_dim = C * H * W
         else:
             T, N, obs_dim = rollouts["states"].shape
+
         device = rollouts["states"].device
 
         advantages = torch.zeros(T, N, device=device)
         gae = 0.0
+
         for t in reversed(range(T - 1)):
             td_error = (
                 rollouts["rewards"][t]
@@ -154,15 +211,51 @@ class A2CSimple(A2CBase):
             advantages[t] = gae
 
         returns = advantages + rollouts["value_preds"]
-        advantages_flat = advantages.reshape(-1)
-        old_log_probs_flat = rollouts["old_log_probs"].reshape(-1)
-        entropies_flat = rollouts["entropies"].reshape(-1)
 
-        critic_loss = advantages.pow(2).mean()
-        actor_loss = -(advantages_flat.detach() * old_log_probs_flat).mean() - hp["ent_coef"] * entropies_flat.mean()
+        advantages_flat = advantages.reshape(-1).detach()
+        advantages_flat = (advantages_flat - advantages_flat.mean()) / (advantages_flat.std() + 1e-8)
+
+        returns_flat = returns.reshape(-1).detach()
+
+        if self.is_continuous_actions:
+            actions_flat = rollouts["pre_tanh_actions"].reshape(-1, self.n_actions)
+        else:
+            actions_flat = rollouts["actions"].reshape(-1)
+
+        if self.atari_mode:
+            states_flat = rollouts["states"].reshape(-1, hp["stack_size"], 84, 84)
+        else:
+            states_flat = rollouts["states"].reshape(-1, obs_dim)
+
+        values, new_logits = self.forward(states_flat)
+        values = values.squeeze(-1)
+
+        critic_loss = (returns_flat.detach() - values).pow(2).mean()
+
+        if self.is_continuous_actions:
+            mean = new_logits
+            std = self.log_std.exp()
+            dist = torch.distributions.Normal(mean, std)
+
+            gaussian_logp = dist.log_prob(actions_flat).sum(-1)
+
+            action_tanh = torch.tanh(actions_flat)
+            squash_correction = torch.log(1 - action_tanh.pow(2) + 1e-6).sum(-1)
+
+            log_probs = gaussian_logp - squash_correction
+
+            entropy = dist.entropy().sum(-1).mean()
+
+        else:
+            dist = torch.distributions.Categorical(logits=new_logits)
+            log_probs = dist.log_prob(actions_flat)
+            entropy = dist.entropy().mean()
+
+        actor_loss = -(advantages_flat.detach() * log_probs).mean() - hp["ent_coef"] * entropy
 
         self.update_parameters(critic_loss, actor_loss)
-        return critic_loss.item(), actor_loss.item(), entropies_flat.mean().item()
+
+        return critic_loss.item(), actor_loss.item(), entropy.item()
 
 
 class PPO(A2CBase):
@@ -193,18 +286,7 @@ class PPO(A2CBase):
             self.flatten = nn.Flatten()
             self.fc = nn.Sequential(nn.Linear(self.flattened_size, 256), nn.ReLU()).to(self.device)
 
-            if self.is_continuous_actions:
-                self.actor = nn.Sequential(
-                    nn.Linear(256, 64),
-                    nn.Tanh(),
-                    nn.Linear(64, 64),
-                    nn.Tanh(),
-                    nn.Linear(64, self.n_actions),
-                    nn.Tanh(),
-                ).to(self.device)
-                self.log_std = nn.Parameter(torch.zeros(self.n_actions, device=self.device))
-            else:
-                self.actor = nn.Linear(256, self.n_actions).to(self.device)
+            self.actor = nn.Linear(256, self.n_actions).to(self.device)
             self.critic = nn.Linear(256, 1).to(self.device)
 
             self.feature_extractor_params = list(self.conv1.parameters()) + list(self.conv2.parameters())
@@ -579,7 +661,7 @@ class GRPO(A2CBase):
                 nn.ReLU(),
                 nn.Linear(64, 64),
                 nn.ReLU(),
-                nn.Linear(64, self.n_actions),
+                nn.Linear(self.n_features, self.n_actions),
             ).to(self.device)
 
             self.optim = optim.Adam(

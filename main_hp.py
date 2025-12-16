@@ -3,8 +3,9 @@ import json
 import torch
 import copy
 import itertools
-import train_grpo_replay_buffer
+from train.train_grpo import train_grpo
 import csv
+import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, required=True, help="Path to the config JSON file")
@@ -17,9 +18,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 hyper_grid = {
     "use_kl": [True, False],
-    "ppo_epochs": [1, 4],
     "grpo_mc": [True, False],
-    "replay_frac": [0.0, 0.1],
 }
 
 keys, values = zip(*hyper_grid.items())
@@ -35,18 +34,27 @@ with open(csv_filename, mode="w", newline="") as f:
     for combo in combinations:
         writer.writerow(combo)
 
-for run_id, combo in enumerate(combinations):
-    print(f"\n[INFO] Starting run {run_id + 1}/{len(combinations)} with combo: {combo}")
+runs_per_combo = 10
+total_runs = len(combinations) * runs_per_combo
+current_run = 0
 
-    hp = copy.deepcopy(base_hp)
-    hp.update(combo)
-    print(f"[HP] Hyperparameters for this run: {hp}")
+for combo_id, combo in enumerate(combinations):
+    for repeat in range(runs_per_combo):
+        current_run += 1
+        print(
+            f"\n[INFO] Starting run {current_run}/{total_runs} - "
+            f"combo {combo_id} (repeat {repeat + 1}/{runs_per_combo}): {combo}"
+        )
 
-    hp["seed"] = hp.get("seed", 123) + run_id
-    hp["run_id"] = run_id
-    if hp["agent_type"] in ("grpo", "grpo_batch"):
-        train_grpo_replay_buffer.run(hp, device)
-    else:
-        raise ValueError(f"Agent type {hp['agent_type']} not supported.")
+        hp = copy.deepcopy(base_hp)
+        hp.update(combo)
+        hp["seed"] = int(np.random.randint(0, 2**31 - 1))
+        hp["run_id"] = f"{combo_id}_rep{repeat + 1}"
+        print(f"[HP] Hyperparameters for this run: {hp}")
 
-    print(f"[INFO] Finished run {run_id + 1}/{len(combinations)}")
+        if hp["agent_type"] in ("grpo", "grpo_batch"):
+            train_grpo(hp, device)
+        else:
+            raise ValueError(f"Agent type {hp['agent_type']} not supported.")
+
+        print(f"[INFO] Finished run {current_run}/{total_runs}")

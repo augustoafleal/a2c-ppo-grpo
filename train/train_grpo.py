@@ -84,7 +84,7 @@ def make_classic_env(env_name, num_envs):
     return SyncVectorEnv([make_single_env() for _ in range(num_envs)])
 
 
-def run(hp, device):
+def train_grpo(hp, device):
 
     if hp["atari_mode"]:
         gym.register_envs(ale_py)
