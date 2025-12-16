@@ -1,8 +1,8 @@
+import os
 import time
 import torch
 import numpy as np
 import gymnasium as gym
-import ale_py
 from gymnasium.vector import SyncVectorEnv
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from A2C import A2C
@@ -50,11 +50,17 @@ def make_classic_env(env_name, num_envs):
     return SyncVectorEnv([make_single_env() for _ in range(num_envs)])
 
 
-def run(hp, device):
+def train_a2c(hp, device):
+    """
+    Train function specifically for A2C.
+
+    Args:
+        hp (dict): Hyperparameters for training.
+        device (torch.device): Device to run the training on.
+    """
     critic_losses, actor_losses, entropies = [], [], []
 
     if hp["atari_mode"]:
-        gym.register_envs(ale_py)
         envs = make_gym_atari_env(
             hp["env_name"],
             num_envs=hp["n_envs"],
@@ -69,6 +75,7 @@ def run(hp, device):
         obs_space = envs.single_observation_space.shape[0]
 
     action_space = envs.single_action_space
+
     if hp["is_continuous_actions"]:
         is_continuous = True
         act_space = action_space.shape[0]
@@ -85,16 +92,13 @@ def run(hp, device):
         actor_lr=hp["actor_lr"],
         n_envs=hp["n_envs"],
         atari_mode=hp["atari_mode"],
-        ppo_epochs=hp["ppo_epochs"],
-        ppo_batch_size=hp["ppo_batch_size"],
-        clip_coef=hp.get("clip_coef", 0.1),
-        is_continuous_actions=is_continuous,
+        is_continuous_actions=hp["is_continuous_actions"],
     )
 
     logger = Logger(
-        episode_filename=f"logs/{hp['agent_type']}_episodes_{hp['run_id']}.csv",
-        update_filename=f"logs/{hp['agent_type']}_updates_{hp['run_id']}.csv",
-        resources_filename=f"logs/{hp['agent_type']}_resources_{hp['run_id']}.csv",
+        episode_filename=f"logs/a2c_episodes_{hp['run_id']}.csv",
+        update_filename=f"logs/a2c_updates_{hp['run_id']}.csv",
+        resources_filename=f"logs/a2c_resources_{hp['run_id']}.csv",
     )
 
     states, _ = envs.reset(seed=hp["seed"])
@@ -108,7 +112,7 @@ def run(hp, device):
     update = 0
     start_time = time.time()
     total_iteration = 0
-    max_iteration = 0
+    max_iteration = hp["max_episodes"]
 
     if hp["atari_mode"]:
         max_iteration = hp["max_episode_steps"]
@@ -120,21 +124,15 @@ def run(hp, device):
         update_start_time = time.time()
         update += 1
 
-        if is_continuous:
-            actions_shape = (hp["n_steps_per_update"], hp["n_envs"], act_space)
-            actions_dtype = torch.float32
-        else:
-            actions_shape = (hp["n_steps_per_update"], hp["n_envs"])
-            actions_dtype = torch.long
-
         rollouts = {
-            "actions": torch.zeros(*actions_shape, dtype=actions_dtype, device=device),
             "value_preds": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], device=device),
             "rewards": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], device=device),
             "old_log_probs": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], device=device),
             "masks": torch.ones(hp["n_steps_per_update"], hp["n_envs"], device=device),
             "entropies": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], device=device),
+            "logits": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], agent.n_actions, device=device),
         }
+
         if hp["atari_mode"]:
             rollouts["states"] = torch.zeros(
                 hp["n_steps_per_update"], hp["n_envs"], hp["stack_size"], 84, 84, device=device
@@ -142,18 +140,30 @@ def run(hp, device):
         else:
             rollouts["states"] = torch.zeros(hp["n_steps_per_update"], hp["n_envs"], obs_space, device=device)
 
+        if hp["is_continuous_actions"]:
+            rollouts["actions"] = torch.zeros(
+                hp["n_steps_per_update"], hp["n_envs"], act_space, dtype=torch.float32, device=device
+            )
+
+            rollouts["pre_tanh_actions"] = torch.zeros(
+                hp["n_steps_per_update"], hp["n_envs"], act_space, dtype=torch.float32, device=device
+            )
+        else:
+            rollouts["actions"] = torch.zeros(hp["n_steps_per_update"], hp["n_envs"], dtype=torch.long, device=device)
+
         for step in range(hp["n_steps_per_update"]):
 
-            if is_continuous:
+            if hp["is_continuous_actions"]:
                 actions, action_log_probs, state_value_preds, entropy, raw_actions = agent.select_action(states)
+                rollouts["pre_tanh_actions"][step] = raw_actions.detach().to(device=device, dtype=torch.float32)
             else:
-                actions, action_log_probs, state_value_preds, entropy = agent.select_action(states)
-                raw_actions = None
+                actions, action_log_probs, state_value_preds, entropy, logits = agent.select_action(states)
+                rollouts["logits"][step] = logits.detach()
 
-            if isinstance(actions, torch.Tensor):
-                actions_to_env = actions.detach().cpu().numpy()
-            else:
-                actions_to_env = actions
+            actions_to_env = actions.detach().cpu().numpy()
+
+            if hp["is_continuous_actions"]:
+                actions_to_env = np.clip(actions_to_env, action_space.low, action_space.high)
 
             next_states, rewards, terminated, truncated, infos = envs.step(actions_to_env)
             total_time_steps += hp["n_envs"]
@@ -161,6 +171,7 @@ def run(hp, device):
             episode_rewards += rewards
             if hp["atari_mode"]:
                 rewards = np.clip(rewards, -1.0, 1.0)
+
             for i, done in enumerate(np.logical_or(terminated, truncated)):
                 if done:
                     last_episode_rewards[i] = episode_rewards[i]
@@ -179,13 +190,10 @@ def run(hp, device):
 
             rollouts["states"][step] = torch.as_tensor(states, device=device)
 
-            if is_continuous:
-                rollouts["actions"][step] = raw_actions.detach().to(device=device, dtype=torch.float32)
+            if hp["is_continuous_actions"]:
+                rollouts["actions"][step] = actions.detach().to(device=device, dtype=torch.float32)
             else:
-                if isinstance(actions, np.ndarray):
-                    rollouts["actions"][step] = torch.as_tensor(actions, device=device, dtype=torch.long)
-                else:
-                    rollouts["actions"][step] = actions.detach().to(device=device, dtype=torch.long)
+                rollouts["actions"][step] = actions.detach().to(device=device, dtype=torch.long)
 
             rollouts["value_preds"][step] = state_value_preds.squeeze(-1).detach()
             rollouts["rewards"][step] = torch.as_tensor(rewards, device=device)
@@ -206,7 +214,7 @@ def run(hp, device):
             actor_loss=actor_loss,
             entropy=entropy,
             total_steps=total_time_steps,
-            log_resources=(update % 5 == 0),
+            log_resources=True,
         )
 
         if hp["atari_mode"]:
@@ -220,16 +228,6 @@ def run(hp, device):
         update_time = time.time() - update_start_time
         elapsed_time = time.time() - start_time
 
-        if hp["atari_mode"]:
-            steps_remaining = max(0, max_time_steps - total_time_steps)
-            steps_per_update = hp["n_steps_per_update"] * hp["n_envs"]
-            updates_remaining = steps_remaining / steps_per_update
-            eta_seconds = updates_remaining * update_time
-        else:
-            iterations_remaining = max(0, max_iteration - total_iteration)
-            updates_remaining = iterations_remaining / 1
-            eta_seconds = updates_remaining * update_time
-
         if update % 5 == 0:
             print(
                 f"[TRAIN] Update {update:4d} | "
@@ -239,12 +237,12 @@ def run(hp, device):
             )
             print(
                 f"[TIME] Update {update} | Total steps: {total_time_steps} | "
-                f"Update time: {update_time:.2f}s | Elapsed: {elapsed_time/60:.2f} min | "
-                f"ETA: {eta_seconds/60:.2f} min"
+                f"Update time: {update_time:.2f}s | Elapsed: {elapsed_time/60:.2f} min"
             )
 
-    torch.save(agent, "ppo_atari_agent_full.pth")
-    print("[INFO] Training finished. Model saved to ppo_atari_agent_full.pth")
+    os.makedirs("models", exist_ok=True)
+    torch.save(agent.state_dict(), f"models/a2c_episodic_agent_{hp['run_id']}.pth")
+    print("[INFO] Training finished. Model saved.")
 
     recorder = RenderRecorder(fps=30)
 

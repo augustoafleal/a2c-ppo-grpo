@@ -163,20 +163,20 @@ We replicated four experiments from the original PPO paper using the Atari envir
 ## Reward Plots and Agent Performance
 
 **Breakout**  
-![Breakout](plots/breakout_reward_moving_avg_aura_final.png)  
-![Breakout Agent](gifs/breakout.gif)
+![Breakout](assets/plots/breakout_reward_moving_avg_aura_final.png)  
+![Breakout Agent](assets/gifs/breakout.gif)
 
 **Frostbite**  
-![Frostbite](plots/frostbite_reward_moving_avg_aura_final.png)  
-![Frostbite Agent](gifs/frostbite.gif)
+![Frostbite](assets/plots/frostbite_reward_moving_avg_aura_final.png)  
+![Frostbite Agent](assets/gifs/frostbite.gif)
 
 **Pong**  
-![Pong](plots/pong_reward_moving_avg_aura_final.png)  
-![Pong Agent](gifs/pong.gif)
+![Pong](assets/plots/pong_reward_moving_avg_aura_final.png)  
+![Pong Agent](assets/gifs/pong.gif)
 
 **Zaxxon**  
-![Zaxxon](plots/zaxxon_reward_moving_avg_aura_final.png)  
-![Zaxxon Agent](gifs/zaxxon.gif)
+![Zaxxon](assets/plots/zaxxon_reward_moving_avg_aura_final.png)  
+![Zaxxon Agent](assets/gifs/zaxxon.gif)
 
 ### Average Rewards (Last 100 Episodes)
 
