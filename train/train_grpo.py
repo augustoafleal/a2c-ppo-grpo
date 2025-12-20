@@ -75,13 +75,70 @@ def make_gym_atari_env(env_id, num_envs, seed=0, frame_skip=4, stack_size=4, ren
 
 
 def make_classic_env(env_name, num_envs):
+
     def make_single_env():
         def _init():
-            return gym.make(env_name)
+            if env_name == "Pinball-v0":
+                import envs.pinball
+
+                return gym.make(env_name, config_name="hard")
+            else:
+                return gym.make(env_name)
 
         return _init
 
     return SyncVectorEnv([make_single_env() for _ in range(num_envs)])
+
+
+def record_render(hp, agent, device):
+    if RenderRecorder is not None:
+        recorder = RenderRecorder(f"grpo_video_{hp['run_id']}.mp4", fps=30)
+        if hp["atari_mode"]:
+
+            def make_render_env(env_id, seed=0):
+                env = gym.make(env_id, frameskip=1, render_mode="rgb_array", obs_type="rgb")
+                env = AtariPreprocessing(
+                    env,
+                    frame_skip=hp["frame_skip"],
+                    grayscale_obs=True,
+                    scale_obs=True,
+                    terminal_on_life_loss=False,
+                    noop_max=30,
+                    screen_size=84,
+                )
+                env = FireResetEnv(env)
+                env = FrameStackObservation(env, stack_size=hp["stack_size"])
+                env.reset(seed=seed)
+                return env
+
+            test_env = make_render_env(hp["env_name"], seed=hp["seed"])
+        else:
+            if hp["env_name"] == "Pinball-v0":
+                import envs.pinball
+
+                test_env = gym.make(hp["env_name"], config_name="hard", render_mode="rgb_array")
+            else:
+                test_env = gym.make(hp["env_name"], render_mode="rgb_array")
+            test_env.reset(seed=hp["seed"])
+        state, _ = test_env.reset()
+        done = False
+        total_reward = 0
+        while not done:
+            with torch.no_grad():
+                s = torch.as_tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+                action, _, _, _ = agent.select_action(s)
+                if hp["is_continuous_actions"]:
+                    action_to_env = action.cpu().numpy()[0]
+                else:
+                    action_to_env = int(action.item())
+            next_state, reward, terminated, truncated, _ = test_env.step(action_to_env)
+            total_reward += reward
+            frame = test_env.render()
+            recorder.capture(frame)
+            state = next_state
+            done = terminated or truncated
+        recorder.save()
+        print(f"[RESULT] Video saved to {recorder.filename} | Reward {total_reward:.2f}")
 
 
 def train_grpo(hp, device):
@@ -137,6 +194,7 @@ def train_grpo(hp, device):
     episode_rewards = np.zeros(hp["n_envs"], dtype=np.float32)
     last_episode_rewards = np.zeros(hp["n_envs"], dtype=np.float32)
     worker_episodes = np.zeros(hp["n_envs"], dtype=int)
+    worker_timesteps = np.zeros(hp["n_envs"], dtype=int)
 
     total_time_steps = 0
     update = 0
@@ -153,6 +211,7 @@ def train_grpo(hp, device):
 
     while worker_episodes[0] < max_iterations:
         update_start_time = time.time()
+        worker_timesteps += 1
 
         with torch.no_grad():
             state_tensor = torch.as_tensor(states, dtype=torch.float32, device=device)
@@ -202,13 +261,14 @@ def train_grpo(hp, device):
                 logger.log_episode(
                     worker=i,
                     episode=worker_episodes[i],
-                    total_steps=total_time_steps,
+                    total_steps=worker_timesteps[i],
                     total_reward=episode_rewards[i],
                     terminated=done,
                 )
                 last_episode_rewards[i] = episode_rewards[i]
                 worker_episodes[i] += 1
                 episode_rewards[i] = 0
+                worker_timesteps[i] = 0
 
                 ep = episode_buffer.end_episode(i)
                 if ep is not None:
@@ -242,57 +302,9 @@ def train_grpo(hp, device):
             )
             print(f"[TIME] Steps {total_time_steps} | Update {update_time:.2f}s | Elapsed {elapsed/60:.2f}m")
 
+            # record_render(hp, agent, device)
+
     os.makedirs("models", exist_ok=True)
     torch.save(agent.state_dict(), f"models/grpo_episodic_agent_{hp['run_id']}.pth")
     print("[INFO] Training finished. Model saved.")
-
-    if RenderRecorder is not None:
-        filename = f"video/video_{hp['run_id']}.mp4"
-        recorder = RenderRecorder(filename=filename, fps=30)
-
-        if hp["atari_mode"]:
-
-            def make_render_env(env_id, seed=0):
-                env = gym.make(env_id, frameskip=1, render_mode="rgb_array", obs_type="rgb")
-                env = AtariPreprocessing(
-                    env,
-                    frame_skip=hp["frame_skip"],
-                    grayscale_obs=True,
-                    scale_obs=True,
-                    terminal_on_life_loss=False,
-                    noop_max=30,
-                    screen_size=84,
-                )
-                env = FireResetEnv(env)
-                env = FrameStackObservation(env, stack_size=hp["stack_size"])
-                env.reset(seed=seed)
-                return env
-
-            test_env = make_render_env(hp["env_name"], seed=hp["seed"])
-        else:
-            test_env = gym.make(hp["env_name"], render_mode="rgb_array")
-            test_env.reset(seed=hp["seed"])
-
-        state, _ = test_env.reset()
-        done = False
-        total_reward = 0
-
-        while not done:
-            with torch.no_grad():
-                s = torch.as_tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                action, _, _, _ = agent.select_action(s)
-
-                if hp["is_continuous_actions"]:
-                    action_to_env = action.cpu().numpy()[0]
-                else:
-                    action_to_env = int(action.item())
-
-            next_state, reward, terminated, truncated, _ = test_env.step(action_to_env)
-            total_reward += reward
-            frame = test_env.render()
-            recorder.capture(frame)
-            state = next_state
-            done = terminated or truncated
-
-        recorder.save()
-        print(f"[RESULT] Video saved to {filename} | Reward {total_reward:.2f}")
+    record_render(hp, agent, device)
