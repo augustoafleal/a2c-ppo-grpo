@@ -21,6 +21,7 @@ class A2CBase(nn.Module):
         stack_size=4,
         use_kl=None,
         is_continuous_action=False,
+        adv_clip=None,
     ):
 
         super().__init__()
@@ -661,7 +662,7 @@ class GRPO(A2CBase):
                 nn.ReLU(),
                 nn.Linear(64, 64),
                 nn.ReLU(),
-                nn.Linear(self.n_features, self.n_actions),
+                nn.Linear(64, self.n_actions),
             ).to(self.device)
 
             self.optim = optim.Adam(

@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from util.RenderRecorder import RenderRecorder
 from util.AtariUtils import FireResetEnv
+from A2C import A2C, EpisodeBuffer
 
 
 def make_render_env(env_id, atari_mode, stack_size=4, seed=0):
@@ -21,15 +22,50 @@ def make_render_env(env_id, atari_mode, stack_size=4, seed=0):
         env = FireResetEnv(env)
         env = FrameStackObservation(env, stack_size=stack_size)
     else:
-        env = gym.make(env_id, render_mode="rgb_array")
+        if env_id == "Pinball-v0":
+            import envs.pinball
+
+            return gym.make(env_id, config_name="simple", render_mode="rgb_array")
+        else:
+            env = gym.make(env_id, render_mode="rgb_array")
     env.reset(seed=seed)
     return env
 
 
 def run(hp, device):
     print(f"[INFO] Loading model from {hp['load_model']}...")
-    agent = torch.load(hp["load_model"], map_location=device, weights_only=False)
-    agent.device = device
+    test_env = make_render_env(hp["env_name"], hp["atari_mode"], hp.get("stack_size", 4), seed=hp["seed"])
+    if hp["atari_mode"]:
+        obs_space = 84 * 84 * hp["stack_size"]
+    else:
+        obs_space = test_env.observation_space.shape[0]
+
+    if hp["is_continuous_actions"]:
+        act_space = test_env.action_space.shape[0]
+    else:
+        act_space = test_env.action_space.n
+
+    agent = A2C(
+        agent_type=hp["agent_type"],
+        n_features=obs_space,
+        n_actions=act_space,
+        device=device,
+        critic_lr=hp["critic_lr"],
+        actor_lr=hp["actor_lr"],
+        n_envs=hp["n_envs"],
+        atari_mode=hp["atari_mode"],
+        ppo_epochs=hp["ppo_epochs"],
+        ppo_batch_size=hp["ppo_batch_size"],
+        clip_coef=hp["clip_coef"],
+        adv_clip=None,
+        stack_size=hp["stack_size"],
+        use_kl=hp["use_kl"],
+        is_continuous_actions=hp["is_continuous_actions"],
+    )
+    state_dict = torch.load(hp["load_model"], map_location=device)
+    agent.load_state_dict(state_dict)
+    agent.to(device)
+    agent.eval()
     run_episodes = 1
     rewards = []
     for ep in range(run_episodes):

@@ -8,6 +8,10 @@ video/
 logs/
 bkp/
 z_bkp/
+envs/
+models/
+pinball_play.py
+pinball_test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

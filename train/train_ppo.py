@@ -44,7 +44,12 @@ def make_gym_atari_env(env_id, num_envs, seed=0, frame_skip=4, stack_size=4, ren
 def make_classic_env(env_name, num_envs):
     def make_single_env():
         def _init():
-            return gym.make(env_name)
+            if env_name == "Pinball-v0":
+                import envs.pinball
+
+                return gym.make(env_name, config_name="hard")
+            else:
+                return gym.make(env_name)
 
         return _init
 
@@ -248,7 +253,7 @@ def train_ppo(hp, device):
     torch.save(agent.state_dict(), f"models/ppo_episodic_agent_{hp['run_id']}.pth")
     print("[INFO] Training finished. Model saved.")
 
-    recorder = RenderRecorder(fps=30)
+    recorder = RenderRecorder(f"video/ppo_video_{hp['run_id']}.mp4", fps=30)
 
     if hp["atari_mode"]:
 
@@ -270,7 +275,12 @@ def train_ppo(hp, device):
 
         test_env = make_render_env(hp["env_name"], seed=hp["seed"])
     else:
-        test_env = gym.make(hp["env_name"], render_mode="rgb_array")
+        if hp["env_name"] == "Pinball-v0":
+            import envs.pinball
+
+            test_env = gym.make(hp["env_name"], config_name="hard", render_mode="rgb_array")
+        else:
+            test_env = gym.make(hp["env_name"], render_mode="rgb_array")
         test_env.reset(seed=hp["seed"])
 
     state, _ = test_env.reset()
