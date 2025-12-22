@@ -6,8 +6,6 @@ from train.train_a2c import train_a2c
 from train.train_grpo import train_grpo
 from train.train_ppo import train_ppo
 
-# train_ppo ainda precisa ser localizado ou implementado.
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, required=True, help="Path to the config JSON file")
 args = parser.parse_args()

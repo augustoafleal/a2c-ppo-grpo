@@ -12,6 +12,7 @@ envs/
 models/
 pinball_play.py
 pinball_test.py
+hyperparameter_combinations.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
