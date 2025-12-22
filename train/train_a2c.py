@@ -3,8 +3,9 @@ import time
 import torch
 import numpy as np
 import gymnasium as gym
+import gymnasium_robotics
 from gymnasium.vector import SyncVectorEnv
-from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
+from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
 from A2C import A2C
 from util.Logger import Logger
 from util.RenderRecorder import RenderRecorder
@@ -47,6 +48,10 @@ def make_classic_env(env_name, num_envs):
                 import envs.pinball
 
                 return gym.make(env_name, config_name="hard")
+            elif env_name.startswith("Fetch"):
+                env = gym.make(env_name, max_episode_steps=50)
+                env = FlattenObservation(env)
+                return env
             else:
                 return gym.make(env_name)
 
@@ -110,7 +115,12 @@ def train_a2c(hp, device):
     episode_rewards = np.zeros(hp["n_envs"], dtype=np.float32)
     last_episode_rewards = np.zeros(hp["n_envs"], dtype=np.float32)
     worker_episodes = np.zeros(hp["n_envs"], dtype=int)
+    worker_timesteps = np.zeros(hp["n_envs"], dtype=int)
     episodes_finished_worker0 = 0
+
+    is_fetch_env = hp["env_name"].startswith("Fetch")
+    success_reached = np.zeros(hp["n_envs"], dtype=bool)
+    success_step = success_step = [None] * hp["n_envs"]
 
     total_time_steps = 0
     max_time_steps = hp["max_time_steps"]
@@ -128,6 +138,7 @@ def train_a2c(hp, device):
     while total_iteration < max_iteration:
         update_start_time = time.time()
         update += 1
+        worker_timesteps += 1
 
         rollouts = {
             "value_preds": torch.zeros(hp["n_steps_per_update"], hp["n_envs"], device=device),
@@ -171,6 +182,15 @@ def train_a2c(hp, device):
                 actions_to_env = np.clip(actions_to_env, action_space.low, action_space.high)
 
             next_states, rewards, terminated, truncated, infos = envs.step(actions_to_env)
+
+            if is_fetch_env:
+                is_success = infos.get("is_success", None)
+                if is_success is not None:
+                    for i in range(hp["n_envs"]):
+                        if (not success_reached[i]) and is_success[i]:
+                            success_reached[i] = True
+                            success_step[i] = worker_timesteps[i]
+
             total_time_steps += hp["n_envs"]
 
             episode_rewards += rewards
@@ -179,16 +199,25 @@ def train_a2c(hp, device):
 
             for i, done in enumerate(np.logical_or(terminated, truncated)):
                 if done:
+
+                    if is_fetch_env:
+                        terminated_log = success_step[i]
+                    else:
+                        terminated_log = done
+
                     last_episode_rewards[i] = episode_rewards[i]
                     logger.log_episode(
                         worker=i,
                         episode=worker_episodes[i],
                         total_steps=update * hp["n_steps_per_update"] + step,
                         total_reward=last_episode_rewards[i],
-                        terminated=done,
+                        terminated=terminated_log,
                     )
                     worker_episodes[i] += 1
                     episode_rewards[i] = 0.0
+                    worker_timesteps[i] = 0
+                    success_step[i] = None
+                    success_reached[i] = False
 
                     if (not hp["atari_mode"]) and i == 0:
                         episodes_finished_worker0 += 1
@@ -270,16 +299,17 @@ def train_a2c(hp, device):
             return env
 
         test_env = make_render_env(hp["env_name"], seed=hp["seed"])
+    elif hp["env_name"].startswith("Fetch"):
+        test_env = gym.make(hp["env_name"], max_episode_steps=50, render_mode="rgb_array")
+        test_env = FlattenObservation(test_env)
+    elif hp["env_name"] == "Pinball-v0":
+        import envs.pinball
+
+        test_env = gym.make(hp["env_name"], config_name="hard", render_mode="rgb_array")
     else:
-        if hp["env_name"] == "Pinball-v0":
-            import envs.pinball
+        test_env = gym.make(hp["env_name"], render_mode="rgb_array")
 
-            test_env = gym.make(hp["env_name"], config_name="hard", render_mode="rgb_array")
-        else:
-            test_env = gym.make(hp["env_name"], render_mode="rgb_array")
-        test_env.reset(seed=hp["seed"])
-
-    state, _ = test_env.reset()
+    state, _ = test_env.reset(seed=hp["seed"])
     done = False
     total_reward = 0
 
@@ -298,7 +328,7 @@ def train_a2c(hp, device):
                 if is_continuous:
                     actions, action_log_probs, state_value_preds, entropy, raw_actions = agent.select_action(states)
                 else:
-                    actions, action_log_probs, state_value_preds, entropy = agent.select_action(states)
+                    actions, action_log_probs, state_value_preds, entropy, _ = agent.select_action(states)
                     raw_actions = None
 
             if hp["is_continuous_actions"]:

@@ -5,8 +5,10 @@ import torch
 import numpy as np
 import gymnasium as gym
 import ale_py
+import gymnasium_robotics
 from gymnasium.vector import SyncVectorEnv
-from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
+from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
+
 from A2C import A2C, EpisodeBuffer
 from util.Logger import Logger
 from util.RenderRecorder import RenderRecorder
@@ -81,7 +83,11 @@ def make_classic_env(env_name, num_envs):
             if env_name == "Pinball-v0":
                 import envs.pinball
 
-                return gym.make(env_name, config_name="hard")
+                return gym.make(env_name, config_name="simple")
+            elif env_name.startswith("Fetch"):
+                env = gym.make(env_name, max_episode_steps=50)
+                env = FlattenObservation(env)
+                return env
             else:
                 return gym.make(env_name)
 
@@ -92,7 +98,7 @@ def make_classic_env(env_name, num_envs):
 
 def record_render(hp, agent, device):
     if RenderRecorder is not None:
-        recorder = RenderRecorder(f"grpo_video_{hp['run_id']}.mp4", fps=30)
+        recorder = RenderRecorder(f"video/grpo_video_{hp['run_id']}.mp4", fps=30)
         if hp["atari_mode"]:
 
             def make_render_env(env_id, seed=0):
@@ -112,15 +118,17 @@ def record_render(hp, agent, device):
                 return env
 
             test_env = make_render_env(hp["env_name"], seed=hp["seed"])
-        else:
-            if hp["env_name"] == "Pinball-v0":
-                import envs.pinball
+        elif hp["env_name"].startswith("Fetch"):
+            test_env = gym.make(hp["env_name"], max_episode_steps=50, render_mode="rgb_array")
+            test_env = FlattenObservation(test_env)
+        elif hp["env_name"] == "Pinball-v0":
+            import envs.pinball
 
-                test_env = gym.make(hp["env_name"], config_name="hard", render_mode="rgb_array")
-            else:
-                test_env = gym.make(hp["env_name"], render_mode="rgb_array")
-            test_env.reset(seed=hp["seed"])
-        state, _ = test_env.reset()
+            test_env = gym.make(hp["env_name"], config_name="simple", render_mode="rgb_array")
+        else:
+            test_env = gym.make(hp["env_name"], render_mode="rgb_array")
+
+        state, _ = test_env.reset(seed=hp["seed"])
         done = False
         total_reward = 0
         while not done:
@@ -196,6 +204,10 @@ def train_grpo(hp, device):
     worker_episodes = np.zeros(hp["n_envs"], dtype=int)
     worker_timesteps = np.zeros(hp["n_envs"], dtype=int)
 
+    is_fetch_env = hp["env_name"].startswith("Fetch")
+    success_reached = np.zeros(hp["n_envs"], dtype=bool)
+    success_step = success_step = [None] * hp["n_envs"]
+
     total_time_steps = 0
     update = 0
     start_time = time.time()
@@ -225,6 +237,14 @@ def train_grpo(hp, device):
             env_action = actions.cpu().numpy()
 
         next_states, rewards, terminated, truncated, infos = envs.step(env_action)
+
+        if is_fetch_env:
+            is_success = infos.get("is_success", None)
+            if is_success is not None:
+                for i in range(hp["n_envs"]):
+                    if (not success_reached[i]) and is_success[i]:
+                        success_reached[i] = True
+                        success_step[i] = worker_timesteps[i]
 
         total_time_steps += hp["n_envs"]
         episode_rewards += rewards
@@ -258,17 +278,25 @@ def train_grpo(hp, device):
         done_mask = np.logical_or(terminated, truncated)
         for i, done in enumerate(done_mask):
             if done:
+
+                if is_fetch_env:
+                    terminated_log = success_step[i]
+                else:
+                    terminated_log = done
+
                 logger.log_episode(
                     worker=i,
                     episode=worker_episodes[i],
                     total_steps=worker_timesteps[i],
                     total_reward=episode_rewards[i],
-                    terminated=done,
+                    terminated=terminated_log,
                 )
                 last_episode_rewards[i] = episode_rewards[i]
                 worker_episodes[i] += 1
                 episode_rewards[i] = 0
                 worker_timesteps[i] = 0
+                success_step[i] = None
+                success_reached[i] = False
 
                 ep = episode_buffer.end_episode(i)
                 if ep is not None:
@@ -301,8 +329,6 @@ def train_grpo(hp, device):
                 f"[TRAIN] Update {update} | ActorLoss {actor_loss:.4f} | Entropy {ent:.4f} | Reward {last_episode_rewards.mean():.2f}"
             )
             print(f"[TIME] Steps {total_time_steps} | Update {update_time:.2f}s | Elapsed {elapsed/60:.2f}m")
-
-            # record_render(hp, agent, device)
 
     os.makedirs("models", exist_ok=True)
     torch.save(agent.state_dict(), f"models/grpo_episodic_agent_{hp['run_id']}.pth")
