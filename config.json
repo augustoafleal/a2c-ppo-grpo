@@ -1,5 +1,5 @@
 {
-    "env_name": "FetchReach-v4",
+    "env_name": "FetchPush-v4",
     "atari_mode": false,
     "is_continuous_actions": true,
     "seed": 123,

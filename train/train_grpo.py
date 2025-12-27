@@ -15,6 +15,38 @@ from util.RenderRecorder import RenderRecorder
 from util.AtariUtils import FireResetEnv
 
 
+class FetchGoalErrorWrapper(gym.ObservationWrapper):
+    def __init__(self, env: gym.Env):
+        super().__init__(env)
+
+        obs_space = env.observation_space["observation"]
+        goal_space = env.observation_space["desired_goal"]
+
+        low = np.concatenate(
+            [
+                obs_space.low,
+                -np.inf * np.ones(goal_space.shape, dtype=np.float32),
+            ]
+        )
+
+        high = np.concatenate(
+            [
+                obs_space.high,
+                np.inf * np.ones(goal_space.shape, dtype=np.float32),
+            ]
+        )
+
+        self.observation_space = gym.spaces.Box(
+            low=low.astype(np.float32),
+            high=high.astype(np.float32),
+            dtype=np.float32,
+        )
+
+    def observation(self, obs):
+        goal_error = obs["desired_goal"] - obs["achieved_goal"]
+        return np.concatenate([obs["observation"], goal_error], axis=0).astype(np.float32)
+
+
 class ReplayBuffer:
     def __init__(self, max_size=10000):
         self.max_size = max_size
@@ -86,7 +118,7 @@ def make_classic_env(env_name, num_envs):
                 return gym.make(env_name, config_name="simple")
             elif env_name.startswith("Fetch"):
                 env = gym.make(env_name, max_episode_steps=50)
-                env = FlattenObservation(env)
+                env = FetchGoalErrorWrapper(env)
                 return env
             else:
                 return gym.make(env_name)
