@@ -16,7 +16,7 @@ with open(args.config, "r") as f:
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-total_runs = 1
+total_runs = 10
 current_run = 0
 
 for repeat in range(total_runs):

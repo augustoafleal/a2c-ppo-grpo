@@ -40,25 +40,23 @@ current_run = 0
 
 for combo_id, combo in enumerate(combinations):
 
-    # USAR ESSE IF PARA FASEAR O TREINAMENTO
-    if combo_id == 3:
+    for repeat in range(runs_per_combo):
+        current_run += 1
 
-        for repeat in range(runs_per_combo):
-            current_run += 1
-            print(
-                f"\n[INFO] Starting run {current_run}/{total_runs} - "
-                f"combo {combo_id} (repeat {repeat + 1}/{runs_per_combo}): {combo}"
-            )
+        print(
+            f"\n[INFO] Starting run {current_run}/{total_runs} - "
+            f"combo {combo_id} (repeat {repeat + 1}/{runs_per_combo}): {combo}"
+        )
 
-            hp = copy.deepcopy(base_hp)
-            hp.update(combo)
-            hp["seed"] = int(np.random.randint(0, 2**31 - 1))
-            hp["run_id"] = f"{combo_id}_rep{repeat + 1}"
-            print(f"[HP] Hyperparameters for this run: {hp}")
+        hp = copy.deepcopy(base_hp)
+        hp.update(combo)
+        hp["seed"] = int(np.random.randint(0, 2**31 - 1))
+        hp["run_id"] = f"{combo_id}_rep{repeat + 1}"
+        print(f"[HP] Hyperparameters for this run: {hp}")
 
-            if hp["agent_type"] in ("grpo", "grpo_batch"):
-                train_grpo(hp, device)
-            else:
-                raise ValueError(f"Agent type {hp['agent_type']} not supported.")
+        if hp["agent_type"] in ("grpo", "grpo_batch"):
+            train_grpo(hp, device)
+        else:
+            raise ValueError(f"Agent type {hp['agent_type']} not supported.")
 
-            print(f"[INFO] Finished run {current_run}/{total_runs}")
+        print(f"[INFO] Finished run {current_run}/{total_runs}")
