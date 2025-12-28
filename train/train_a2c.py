@@ -327,7 +327,7 @@ def train_a2c(hp, device):
         test_env = make_render_env(hp["env_name"], seed=hp["seed"])
     elif hp["env_name"].startswith("Fetch"):
         test_env = gym.make(hp["env_name"], max_episode_steps=50, render_mode="rgb_array")
-        test_env = FlattenObservation(test_env)
+        test_env = FetchGoalErrorWrapper(test_env)
     elif hp["env_name"] == "Pinball-v0":
         import envs.pinball
 
