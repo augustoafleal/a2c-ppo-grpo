@@ -132,9 +132,10 @@ class A2CBase(nn.Module):
 
 
 class A2CSimple(A2CBase):
-    def __init__(self, *args, is_continuous_actions=False, **kwargs):
+    def __init__(self, *args, is_continuous_actions=False, clamp_log_std=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.is_continuous_actions = is_continuous_actions
+        self.clamp_log_std = clamp_log_std
 
         if self.is_continuous_actions:
             self.actor = nn.Sequential(
@@ -169,7 +170,14 @@ class A2CSimple(A2CBase):
 
         if self.is_continuous_actions:
             mean = logits
-            std = self.log_std.exp()
+
+            if self.clamp_log_std:
+                log_std = torch.clamp(self.log_std, -20, 2)
+            else:
+                log_std = self.log_std
+
+            std = log_std.exp()
+
             dist = torch.distributions.Normal(mean, std)
 
             raw_action = dist.rsample()
@@ -235,7 +243,14 @@ class A2CSimple(A2CBase):
 
         if self.is_continuous_actions:
             mean = new_logits
-            std = self.log_std.exp()
+
+            if self.clamp_log_std:
+                log_std = torch.clamp(self.log_std, -20, 2)
+            else:
+                log_std = self.log_std
+
+            std = log_std.exp()
+
             dist = torch.distributions.Normal(mean, std)
 
             gaussian_logp = dist.log_prob(actions_flat).sum(-1)
@@ -261,9 +276,18 @@ class A2CSimple(A2CBase):
 
 class PPO(A2CBase):
     def __init__(
-        self, *args, ppo_epochs=None, ppo_batch_size=None, clip_coef=None, is_continuous_actions=False, **kwargs
+        self,
+        *args,
+        ppo_epochs=None,
+        ppo_batch_size=None,
+        clip_coef=None,
+        is_continuous_actions=False,
+        clamp_log_std=False,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
+
+        self.clamp_log_std = clamp_log_std
 
         if ppo_epochs is None:
             raise ValueError("ppo_epochs must be provided for PPO")
@@ -360,7 +384,13 @@ class PPO(A2CBase):
 
         if self.is_continuous_actions:
             mean = logits
-            std = self.log_std.exp()
+
+            if self.clamp_log_std:
+                log_std = torch.clamp(self.log_std, -20, 2)
+            else:
+                log_std = self.log_std
+
+            std = log_std.exp()
             dist = torch.distributions.Normal(mean, std)
 
             raw_action = dist.rsample()
@@ -436,7 +466,14 @@ class PPO(A2CBase):
 
                 if self.is_continuous_actions:
                     mean = new_logits
-                    std = self.log_std.exp()
+
+                    if self.clamp_log_std:
+                        log_std = torch.clamp(self.log_std, -20, 2)
+                    else:
+                        log_std = self.log_std
+
+                    std = log_std.exp()
+
                     dist = torch.distributions.Normal(mean, std)
 
                     raw_actions = batch_actions
@@ -599,6 +636,7 @@ class GRPO(A2CBase):
         adv_clip=None,
         use_kl=None,
         is_continuous_actions=None,
+        clamp_log_std=False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -610,6 +648,7 @@ class GRPO(A2CBase):
         self.adv_clip = adv_clip
         self.use_kl = use_kl
         self.is_continuous_actions = is_continuous_actions
+        self.clamp_log_std = clamp_log_std
 
         if self.atari_mode:
             self.conv1 = nn.Conv2d(in_channels=self.stack_size, out_channels=16, kernel_size=8, stride=4)
@@ -689,7 +728,14 @@ class GRPO(A2CBase):
 
         if self.is_continuous_actions:
             mu = out
-            std = torch.exp(self.log_std)
+
+            if self.clamp_log_std:
+                log_std = torch.clamp(self.log_std, -20, 2)
+            else:
+                log_std = self.log_std
+
+            std = log_std.exp()
+
             dist = torch.distributions.Normal(mu, std)
             action = dist.rsample()
             self._pre_tanh_action = action
@@ -776,7 +822,13 @@ class GRPO(A2CBase):
 
                 if self.is_continuous_actions:
                     mu = logits_or_mu
-                    std = torch.exp(self.log_std).expand_as(mu)
+
+                    if self.clamp_log_std:
+                        log_std = torch.clamp(self.log_std, -20, 2)
+                    else:
+                        log_std = self.log_std
+
+                    std = torch.exp(log_std).expand_as(mu)
                     dist = torch.distributions.Normal(mu, std)
 
                     if mb_actions.ndim == 1:

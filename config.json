@@ -1,7 +1,8 @@
 {
-    "env_name": "FetchPush-v4",
+    "env_name": "PointMaze_Medium-v3",
     "atari_mode": false,
     "is_continuous_actions": true,
+    "clamp_log_std": true,
     "seed": 123,
     "n_envs": 16,
     "n_updates": 1,
@@ -13,7 +14,7 @@
     "critic_lr": 0.00007,
     "max_episode_steps": 50000000,
     "vf_coef": 1,
-    "max_episodes": 5000,
+    "max_episodes": 10000,
     "max_time_steps": 3000,
     "ppo_epochs": 4,
     "ppo_batch_size": 64,

@@ -117,7 +117,11 @@ def make_classic_env(env_name, num_envs):
 
                 return gym.make(env_name, config_name="simple")
             elif env_name.startswith("Fetch"):
-                env = gym.make(env_name, max_episode_steps=50)
+                env = gym.make(env_name)  # , max_episode_steps=50)
+                env = FetchGoalErrorWrapper(env)
+                return env
+            elif env_name.startswith("PointMaze"):
+                env = gym.make(env_name, continuing_task=True, reset_target=True)  # , max_episode_steps=50)
                 env = FetchGoalErrorWrapper(env)
                 return env
             else:
@@ -130,7 +134,9 @@ def make_classic_env(env_name, num_envs):
 
 def record_render(hp, agent, device):
     if RenderRecorder is not None:
-        recorder = RenderRecorder(f"video/grpo_video_{hp['run_id']}.mp4", fps=30)
+        # recorder = RenderRecorder(f"video/grpo_video_{hp['run_id']}.mp4", fps=30)
+
+        recorder = RenderRecorder(fps=30)
         if hp["atari_mode"]:
 
             def make_render_env(env_id, seed=0):
@@ -151,7 +157,10 @@ def record_render(hp, agent, device):
 
             test_env = make_render_env(hp["env_name"], seed=hp["seed"])
         elif hp["env_name"].startswith("Fetch"):
-            test_env = gym.make(hp["env_name"], max_episode_steps=50, render_mode="rgb_array")
+            test_env = gym.make(hp["env_name"], render_mode="rgb_array", max_episode_steps=50)
+            test_env = FetchGoalErrorWrapper(test_env)
+        elif hp["env_name"].startswith("PointMaze"):
+            test_env = gym.make(hp["env_name"], render_mode="rgb_array", continuing_task=True, reset_target=True)
             test_env = FetchGoalErrorWrapper(test_env)
         elif hp["env_name"] == "Pinball-v0":
             import envs.pinball
@@ -219,6 +228,7 @@ def train_grpo(hp, device):
         stack_size=hp["stack_size"],
         use_kl=hp["use_kl"],
         is_continuous_actions=hp["is_continuous_actions"],
+        clamp_log_std=hp["clamp_log_std"],
     )
 
     logger = Logger(
@@ -236,7 +246,7 @@ def train_grpo(hp, device):
     worker_episodes = np.zeros(hp["n_envs"], dtype=int)
     worker_timesteps = np.zeros(hp["n_envs"], dtype=int)
 
-    is_fetch_env = hp["env_name"].startswith("Fetch")
+    is_fetch_env = hp["env_name"].startswith("Fetch") or hp["env_name"].startswith("PointMaze")
     success_reached = np.zeros(hp["n_envs"], dtype=bool)
     success_step = success_step = [None] * hp["n_envs"]
 
@@ -361,6 +371,9 @@ def train_grpo(hp, device):
                 f"[TRAIN] Update {update} | ActorLoss {actor_loss:.4f} | Entropy {ent:.4f} | Reward {last_episode_rewards.mean():.2f}"
             )
             print(f"[TIME] Steps {total_time_steps} | Update {update_time:.2f}s | Elapsed {elapsed/60:.2f}m")
+
+            if update % 10 == 0:
+                record_render(hp, agent, device)
 
     os.makedirs("models", exist_ok=True)
     torch.save(agent.state_dict(), f"models/grpo_episodic_agent_{hp['run_id']}.pth")
