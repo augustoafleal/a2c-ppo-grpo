@@ -84,6 +84,10 @@ def make_classic_env(env_name, num_envs):
                 env = gym.make(env_name, max_episode_steps=50)
                 env = FetchGoalErrorWrapper(env)
                 return env
+            elif env_name.startswith("PointMaze"):
+                env = gym.make(env_name, continuing_task=True, reset_target=True)
+                env = FetchGoalErrorWrapper(env)
+                return env
             else:
                 return gym.make(env_name)
 
@@ -129,6 +133,7 @@ def train_a2c(hp, device):
         n_envs=hp["n_envs"],
         atari_mode=hp["atari_mode"],
         is_continuous_actions=hp["is_continuous_actions"],
+        clamp_log_std=hp["clamp_log_std"],
     )
 
     logger = Logger(
@@ -327,6 +332,9 @@ def train_a2c(hp, device):
         test_env = make_render_env(hp["env_name"], seed=hp["seed"])
     elif hp["env_name"].startswith("Fetch"):
         test_env = gym.make(hp["env_name"], max_episode_steps=50, render_mode="rgb_array")
+        test_env = FetchGoalErrorWrapper(test_env)
+    elif hp["env_name"].startswith("PointMaze"):
+        test_env = gym.make(hp["env_name"], render_mode="rgb_array", continuing_task=True, reset_target=True)
         test_env = FetchGoalErrorWrapper(test_env)
     elif hp["env_name"] == "Pinball-v0":
         import envs.pinball
