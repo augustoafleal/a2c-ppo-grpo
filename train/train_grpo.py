@@ -244,7 +244,7 @@ def train_grpo(hp, device):
     worker_episodes = np.zeros(hp["n_envs"], dtype=int)
     worker_timesteps = np.zeros(hp["n_envs"], dtype=int)
 
-    is_fetch_env = hp["env_name"].startswith("Fetch") or hp["env_name"].startswith("PointMaze")
+    is_fetch_env = hp["env_name"].startswith("Fetch")
     success_reached = np.zeros(hp["n_envs"], dtype=bool)
     success_step = success_step = [None] * hp["n_envs"]
 
