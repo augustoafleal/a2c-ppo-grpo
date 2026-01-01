@@ -370,9 +370,6 @@ def train_grpo(hp, device):
             )
             print(f"[TIME] Steps {total_time_steps} | Update {update_time:.2f}s | Elapsed {elapsed/60:.2f}m")
 
-            if update % 10 == 0:
-                record_render(hp, agent, device)
-
     os.makedirs("models", exist_ok=True)
     torch.save(agent.state_dict(), f"models/grpo_episodic_agent_{hp['run_id']}.pth")
     print("[INFO] Training finished. Model saved.")
