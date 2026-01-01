@@ -117,11 +117,11 @@ def make_classic_env(env_name, num_envs):
 
                 return gym.make(env_name, config_name="simple")
             elif env_name.startswith("Fetch"):
-                env = gym.make(env_name)  # , max_episode_steps=50)
+                env = gym.make(env_name)
                 env = FetchGoalErrorWrapper(env)
                 return env
             elif env_name.startswith("PointMaze"):
-                env = gym.make(env_name, continuing_task=True, reset_target=True)  # , max_episode_steps=50)
+                env = gym.make(env_name, continuing_task=True, reset_target=True)
                 env = FetchGoalErrorWrapper(env)
                 return env
             else:
@@ -134,9 +134,7 @@ def make_classic_env(env_name, num_envs):
 
 def record_render(hp, agent, device):
     if RenderRecorder is not None:
-        # recorder = RenderRecorder(f"video/grpo_video_{hp['run_id']}.mp4", fps=30)
-
-        recorder = RenderRecorder(fps=30)
+        recorder = RenderRecorder(f"video/grpo_video_{hp['run_id']}.mp4", fps=30)
         if hp["atari_mode"]:
 
             def make_render_env(env_id, seed=0):
