@@ -33,6 +33,7 @@ Example config snippet:
     "sweep": {
         "enabled": true,
         "envs": ["MountainCarContinuous-v0", "FetchReach-v4"],
+        "grpo_mc_values": [false, true],
         "kl_coefs": [0.0, 0.01, 0.04, 0.08],
         "seeds": [0, 1, 2, 3, 4],
         "log_root": "logs/kl_sweep",
@@ -43,7 +44,7 @@ Example config snippet:
 
 Notes:
 - `kl_coef = 0.0` disables KL for that run.
-- Logs are organized as `logs/kl_sweep/<env>/kl_<coef>/seed_<seed>/`.
+- Logs are organized as `logs/kl_sweep/<env>/mc_<true|false>/kl_<coef>/seed_<seed>/`.
 - A `config.json` snapshot is saved inside each run folder.
 
 ## Expected `rollouts` Format (A2C & PPO)

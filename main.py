@@ -35,42 +35,51 @@ sweep = hp.get("sweep", {})
 if sweep.get("enabled", False):
     if hp.get("load_model"):
         raise ValueError("Sweep is not supported in evaluation mode. Remove 'load_model' from config.")
-    if hp.get("agent_type") != "grpo":
-        raise ValueError("Sweep is supported only for GRPO training. Set 'agent_type' to 'grpo'.")
+    if hp.get("agent_type") not in ("grpo", "grpo_batch"):
+        raise ValueError(
+            "Sweep is supported only for GRPO training (including grpo_mc). Set 'agent_type' to 'grpo'."
+        )
 
     envs = sweep.get("envs", [hp["env_name"]])
     kl_coefs = sweep.get("kl_coefs", [hp.get("kl_coef", 0.0 if not hp.get("use_kl", False) else hp["kl_coef"])])
     seeds = sweep.get("seeds", [hp.get("seed", 0)])
+    grpo_mc_values = sweep.get("grpo_mc_values", [bool(hp.get("grpo_mc", False))])
     log_root = sweep.get("log_root", "logs/kl_sweep")
     run_tag = sweep.get("run_tag", "kl_sweep")
 
-    total_runs = len(envs) * len(kl_coefs) * len(seeds)
+    total_runs = len(envs) * len(kl_coefs) * len(seeds) * len(grpo_mc_values)
     current_run = 0
 
     for env_name in envs:
         env_safe = _safe_name(env_name)
-        for kl_coef in kl_coefs:
-            use_kl = float(kl_coef) > 0.0
-            kl_tag = str(kl_coef).replace(".", "p")
-            for seed in seeds:
-                current_run += 1
-                run_hp = copy.deepcopy(hp)
-                run_hp["env_name"] = env_name
-                run_hp["seed"] = int(seed)
-                run_hp["use_kl"] = use_kl
-                run_hp["kl_coef"] = float(kl_coef)
-                run_hp["run_id"] = f"{run_tag}__{env_safe}__kl_{kl_tag}__seed_{seed}"
-                run_hp["log_dir"] = os.path.join(log_root, env_safe, f"kl_{kl_coef}", f"seed_{seed}")
+        for grpo_mc in grpo_mc_values:
+            mc_flag = bool(grpo_mc)
+            mc_tag = "mc_true" if mc_flag else "mc_false"
+            for kl_coef in kl_coefs:
+                use_kl = float(kl_coef) > 0.0
+                kl_tag = str(kl_coef).replace(".", "p")
+                for seed in seeds:
+                    current_run += 1
+                    run_hp = copy.deepcopy(hp)
+                    run_hp["env_name"] = env_name
+                    run_hp["seed"] = int(seed)
+                    run_hp["use_kl"] = use_kl
+                    run_hp["kl_coef"] = float(kl_coef)
+                    run_hp["grpo_mc"] = mc_flag
+                    run_hp["run_id"] = f"{run_tag}__{env_safe}__{mc_tag}__kl_{kl_tag}__seed_{seed}"
+                    run_hp["log_dir"] = os.path.join(
+                        log_root, env_safe, mc_tag, f"kl_{kl_coef}", f"seed_{seed}"
+                    )
 
-                os.makedirs(run_hp["log_dir"], exist_ok=True)
-                with open(os.path.join(run_hp["log_dir"], "config.json"), "w") as f:
-                    json.dump(run_hp, f, indent=4)
+                    os.makedirs(run_hp["log_dir"], exist_ok=True)
+                    with open(os.path.join(run_hp["log_dir"], "config.json"), "w") as f:
+                        json.dump(run_hp, f, indent=4)
 
-                print(
-                    f"\n[INFO] Sweep run {current_run}/{total_runs} | "
-                    f"env={env_name} | kl_coef={kl_coef} | seed={seed}"
-                )
-                _run_training(run_hp)
+                    print(
+                        f"\n[INFO] Sweep run {current_run}/{total_runs} | "
+                        f"env={env_name} | grpo_mc={mc_flag} | kl_coef={kl_coef} | seed={seed}"
+                    )
+                    _run_training(run_hp)
 else:
     if hp.get("load_model"):
         print(f"[INFO] Evaluation mode. Using model from {hp['load_model']}")
