@@ -13,6 +13,7 @@ fsspec==2025.9.0
 glfw==2.10.0
 GPUtil==1.4.0
 gymnasium==1.2.0
+gymnasium-robotics==1.4.1
 imageio==2.37.0
 imageio-ffmpeg==0.6.0
 importlib_resources==6.5.2
@@ -42,6 +43,7 @@ nvidia-nvtx-cu12==12.8.90
 opencv-python==4.12.0.88
 packaging==25.0
 pandas==2.3.2
+pettingzoo==1.24.3
 pillow==11.3.0
 proglog==0.1.12
 psutil==7.1.0
