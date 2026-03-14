@@ -14,7 +14,7 @@
     "critic_lr": 0.00001,
     "max_episode_steps": 50000000,
     "vf_coef": 1,
-    "max_episodes": 5,
+    "max_episodes": 5000,
     "max_time_steps": 3000,
     "ppo_epochs": 4,
     "ppo_batch_size": 64,
@@ -35,7 +35,8 @@
     "sweep": {
         "enabled": true,
         "envs": ["MountainCarContinuous-v0", "FetchReach-v4"],
-        "kl_coefs": [0.0],
+        "grpo_mc_values": [false, true],
+        "kl_coefs": [0.0, 0.01, 0.04, 0.08],
         "seeds": [0, 1, 2, 3, 4],
         "log_root": "logs/kl_sweep",
         "run_tag": "kl_sweep"
