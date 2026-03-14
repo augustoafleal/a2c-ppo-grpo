@@ -136,11 +136,20 @@ def train_a2c(hp, device):
         clamp_log_std=hp["clamp_log_std"],
     )
 
-    logger = Logger(
-        episode_filename=f"logs/a2c_episodes_{hp['run_id']}.csv",
-        update_filename=f"logs/a2c_updates_{hp['run_id']}.csv",
-        resources_filename=f"logs/a2c_resources_{hp['run_id']}.csv",
-    )
+    log_dir = hp.get("log_dir")
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        logger = Logger(
+            episode_filename=os.path.join(log_dir, "episodes.csv"),
+            update_filename=os.path.join(log_dir, "updates.csv"),
+            resources_filename=os.path.join(log_dir, "resources.csv"),
+        )
+    else:
+        logger = Logger(
+            episode_filename=f"logs/a2c_episodes_{hp['run_id']}.csv",
+            update_filename=f"logs/a2c_updates_{hp['run_id']}.csv",
+            resources_filename=f"logs/a2c_resources_{hp['run_id']}.csv",
+        )
 
     states, _ = envs.reset(seed=hp["seed"])
     episode_rewards = np.zeros(hp["n_envs"], dtype=np.float32)

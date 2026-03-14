@@ -20,6 +20,32 @@ python main.py --config path/to/config.json
 If `load_model` is set, the script runs in evaluation mode using the saved model.  
 If empty, the script runs in training mode.
 
+## KL Sweep (GRPO Only)
+
+You can run a KL sweep for GRPO directly from config. This is intended for comparisons like
+`use_kl=false` vs `kl_coef ∈ {0.01, 0.04, 0.08}` across multiple seeds and environments.
+
+Example config snippet:
+
+```json
+{
+    "agent_type": "grpo",
+    "sweep": {
+        "enabled": true,
+        "envs": ["MountainCarContinuous-v0", "FetchReach-v4"],
+        "kl_coefs": [0.0, 0.01, 0.04, 0.08],
+        "seeds": [0, 1, 2, 3, 4],
+        "log_root": "logs/kl_sweep",
+        "run_tag": "kl_sweep"
+    }
+}
+```
+
+Notes:
+- `kl_coef = 0.0` disables KL for that run.
+- Logs are organized as `logs/kl_sweep/<env>/kl_<coef>/seed_<seed>/`.
+- A `config.json` snapshot is saved inside each run folder.
+
 ## Expected `rollouts` Format (A2C & PPO)
 
 The `update_agent` method expects a dictionary `rollouts` with:
@@ -130,6 +156,8 @@ Below is a configuration including A2C/PPO fields and GRPO-specific extensions:
 | frame_skip             | Atari wrapper                       | Frame skip |
 | render_mode            | external                            | Rendering mode |
 | load_model             | external                            | Evaluation if set |
+| log_dir                | external                            | Override log output directory |
+| sweep                  | external                            | GRPO-only KL sweep configuration |
 
 ## Plotting Rewards
 
