@@ -1,5 +1,5 @@
 {
-    "env_name": "PointMaze_Medium-v3",
+    "env_name": "MountainCarContinuous-v0",
     "atari_mode": false,
     "is_continuous_actions": true,
     "clamp_log_std": true,
@@ -14,7 +14,7 @@
     "critic_lr": 0.00001,
     "max_episode_steps": 50000000,
     "vf_coef": 1,
-    "max_episodes": 5000,
+    "max_episodes": 5,
     "max_time_steps": 3000,
     "ppo_epochs": 4,
     "ppo_batch_size": 64,
@@ -31,5 +31,13 @@
     "replay_frac": 0.1,
     "replay_max_size": 5000,
     "grpo_mc": true,
-    "run_id": 0
+    "run_id": 0,
+    "sweep": {
+        "enabled": true,
+        "envs": ["MountainCarContinuous-v0", "FetchReach-v4"],
+        "kl_coefs": [0.0],
+        "seeds": [0, 1, 2, 3, 4],
+        "log_root": "logs/kl_sweep",
+        "run_tag": "kl_sweep"
+    }
 }

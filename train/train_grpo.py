@@ -229,11 +229,20 @@ def train_grpo(hp, device):
         clamp_log_std=hp["clamp_log_std"],
     )
 
-    logger = Logger(
-        episode_filename=f"logs/grpo_episodes_{hp['run_id']}.csv",
-        update_filename=f"logs/grpo_updates_{hp['run_id']}.csv",
-        resources_filename=f"logs/grpo_resources_{hp['run_id']}.csv",
-    )
+    log_dir = hp.get("log_dir")
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        logger = Logger(
+            episode_filename=os.path.join(log_dir, "episodes.csv"),
+            update_filename=os.path.join(log_dir, "updates.csv"),
+            resources_filename=os.path.join(log_dir, "resources.csv"),
+        )
+    else:
+        logger = Logger(
+            episode_filename=f"logs/grpo_episodes_{hp['run_id']}.csv",
+            update_filename=f"logs/grpo_updates_{hp['run_id']}.csv",
+            resources_filename=f"logs/grpo_resources_{hp['run_id']}.csv",
+        )
 
     episode_buffer = EpisodeBuffer(n_envs=hp["n_envs"], device=device)
     replay = ReplayBuffer(max_size=hp["replay_max_size"])
@@ -369,6 +378,9 @@ def train_grpo(hp, device):
                 f"[TRAIN] Update {update} | ActorLoss {actor_loss:.4f} | Entropy {ent:.4f} | Reward {last_episode_rewards.mean():.2f}"
             )
             print(f"[TIME] Steps {total_time_steps} | Update {update_time:.2f}s | Elapsed {elapsed/60:.2f}m")
+
+            if update % 10 == 0:
+                record_render(hp, agent, device)
 
     os.makedirs("models", exist_ok=True)
     torch.save(agent.state_dict(), f"models/grpo_episodic_agent_{hp['run_id']}.pth")
