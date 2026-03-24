@@ -10,8 +10,8 @@
     "gamma": 0.99,
     "lam": 0.95,
     "ent_coef": 0.01,
-    "actor_lr": 0.00001,
-    "critic_lr": 0.00001,
+    "actor_lr": 0.00025,
+    "critic_lr": 0.00025,
     "max_episode_steps": 50000000,
     "vf_coef": 1,
     "max_episodes": 5000,
@@ -34,11 +34,12 @@
     "run_id": 0,
     "sweep": {
         "enabled": true,
-        "envs": ["MountainCarContinuous-v0", "FetchReach-v4"],
+        "envs": ["MountainCarContinuous-v0"],
         "grpo_mc_values": [false, true],
-        "kl_coefs": [0.0, 0.01, 0.04, 0.08],
+        "kl_coefs": [0.01, 0.05, 0.1, 0.2, 0.3],
+        "divergences": ["w1", "w2"],
         "seeds": [0, 1, 2, 3, 4],
-        "log_root": "logs/kl_sweep",
-        "run_tag": "kl_sweep"
+        "log_root": "logs/wasserstein_sweep",
+        "run_tag": "wasserstein_sweep"
     }
 }

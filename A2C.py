@@ -806,6 +806,7 @@ class GRPO(A2CBase):
         actor_loss_epoch = 0.0
         entropy_epoch = 0.0
         num_updates = 0
+        divergence = str(hp.get("divergence", "kl")).lower()
 
         for _ in range(self.ppo_epochs):
             perm = torch.randperm(total_size, device=device)
@@ -849,14 +850,43 @@ class GRPO(A2CBase):
                 surr2 = torch.clamp(ratio, 1 - self.clip_coef, 1 + self.clip_coef) * mb_adv
 
                 if self.use_kl:
+                    # if self.is_continuous_actions:
+                    #    old_dist = torch.distributions.Normal(mb_old_logits, mb_old_stds)
+                    #    kl = torch.distributions.kl_divergence(dist, old_dist).sum(dim=-1).mean()
+                    #    actor_loss = -torch.min(surr1, surr2).mean() - hp["ent_coef"] * entropy + hp["kl_coef"] * kl
+
                     if self.is_continuous_actions:
-                        old_dist = torch.distributions.Normal(mb_old_logits, mb_old_stds)
-                        kl = torch.distributions.kl_divergence(dist, old_dist).sum(dim=-1).mean()
-                        actor_loss = -torch.min(surr1, surr2).mean() - hp["ent_coef"] * entropy + hp["kl_coef"] * kl
+                        old_mu = mb_old_logits
+                        old_std = mb_old_stds
+
+                        if divergence == "kl":
+                            old_dist = torch.distributions.Normal(old_mu, old_std)
+                            kl = torch.distributions.kl_divergence(dist, old_dist).sum(dim=-1).mean()
+                            reg = kl
+
+                        elif divergence in ("wasserstein", "w2"):
+                            w2 = (mu - old_mu).pow(2) + (std - old_std).pow(2)
+                            w2 = w2.sum(dim=-1)
+                            w2 = torch.sqrt(w2 + 1e-8)
+
+                            reg = (w2 / (1.0 + w2.detach())).mean()
+
+                        elif divergence in ("wasserstein1", "w1"):
+                            reg = (mu - old_mu).abs().sum(dim=-1) + (std - old_std).abs().sum(dim=-1)
+                            reg = reg.mean()
+
+                        else:
+                            raise ValueError(
+                                f"Unknown divergence '{divergence}'. Use one of: ['kl', 'wasserstein', 'w2']."
+                            )
+
+                        actor_loss = -torch.min(surr1, surr2).mean() - hp["ent_coef"] * entropy + hp["kl_coef"] * reg
+
                     else:
                         old_dist = torch.distributions.Categorical(logits=mb_old_logits)
                         kl = torch.distributions.kl_divergence(dist, old_dist).mean()
                         actor_loss = -torch.min(surr1, surr2).mean() - hp["ent_coef"] * entropy + hp["kl_coef"] * kl
+
                 else:
                     actor_loss = -torch.min(surr1, surr2).mean() - hp["ent_coef"] * entropy
 
