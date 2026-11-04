@@ -1,6 +1,6 @@
 # Reinforcement Learning Agents — A2C, PPO & GRPO (PyTorch)
 
-PyTorch implementation of Advantage Actor-Critic (A2C), Proximal Policy Optimization (PPO), and Generalized REINFORCE Policy Optimization (GRPO).  
+PyTorch implementation of Advantage Actor-Critic (A2C), Proximal Policy Optimization (PPO), and Group Relative Policy Optimization (GRPO).
 Supports both vectorized environments and Atari (CNN-based) setups.
 
 ## Installation
